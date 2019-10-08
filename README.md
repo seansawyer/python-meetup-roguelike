@@ -19,7 +19,7 @@ pip install -r requirements.txt
 
 ```
 # In your virtual environment...
-pip install --upgrade -r requirements
+pip install --upgrade -r requirements.txt
 ```
 
 ## Building Executables
