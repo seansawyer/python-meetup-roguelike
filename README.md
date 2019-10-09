@@ -29,9 +29,17 @@ that can be run without downloading Python, installing libraries, etc.
 
 ```
 # In your virtual environment...
-pyinstaller pmrl.py
+pyinstaller pmrl.py \
+    --add-binary '/home/sean/src/python-meetup-roguelike/arial10x10.png:."
 ```
 
 After the PyInstaller build finishes, the _dist/pmrl_ directory will contain the
 application and all dependencies necessary to run the game on the platform you
 ran the build on.
+
+To run the packaged, standalone executable:
+
+```
+cd dist/pmrl
+./pmrl
+```
