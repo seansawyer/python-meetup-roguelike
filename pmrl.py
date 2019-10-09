@@ -1,7 +1,54 @@
 import time
+from typing import Tuple
 
 import tcod as libtcod
 
+map_s = [
+    '##########',
+    '#........#',
+    '#........#',
+    '#........#',
+    '#........#',
+    '#........#',
+    '#........#',
+    '#........#',
+    '#........#',
+    '##########',
+]
+map = [list(r) for r in map_s]
+map_width = len(map[0])
+map_height = len(map)
+
+def check_move(
+        map_coords: Tuple[int, int],
+        new_player_coords: Tuple[int, int]
+):
+    map_x, map_y = map_coords
+    new_player_x, new_player_y = new_player_coords
+    if map_x < new_player_x < map_x + map_width - 1:
+        if map_y < new_player_y < map_y + map_height - 1:
+            return True
+    return False
+
+def draw_map(
+    map_coords: Tuple[int, int],
+    player_coords: Tuple[int, int]
+):
+    map_x, map_y = map_coords
+    player_x, player_y = player_coords
+    y = map_y
+    for row in map:
+        x = map_x
+        for tile in row:
+            if x == player_x and y == player_y:
+                libtcod.console_put_char(0, x, y, '@', libtcod.BKGND_NONE)
+            #elif x == end_coords[0] and y == end_coords[1]:
+            #    print('*', end='')
+            else:
+                libtcod.console_put_char(0, x, y, tile, libtcod.BKGND_NONE)
+            x += 1
+        y += 1
+    libtcod.console_flush()
 
 def keypress_to_command(key: libtcod.Key):
     key_vk_command_map = {
@@ -26,8 +73,13 @@ def keypress_to_command(key: libtcod.Key):
 def main():
     screen_width = 80
     screen_height = 50
-    player_x = int(screen_width / 2)
-    player_y = int(screen_height / 2)
+    map_x = 0
+    map_y = 0
+    player_coords = (
+        int((map_x + map_width) / 2),
+        int((map_y + map_height) / 2),
+    )
+    map_coords = (0, 0)
     libtcod.console_set_custom_font('arial10x10.png', libtcod.FONT_TYPE_GRAYSCALE | libtcod.FONT_LAYOUT_TCOD)
     libtcod.console_init_root(screen_width, screen_height, 'pmrl', False)
     # set up input devices
@@ -46,17 +98,20 @@ def main():
             time.sleep(5)
             continue
         # main game loop
-        libtcod.console_put_char(0, player_x, player_y, '@', libtcod.BKGND_NONE)
-        libtcod.console_flush()
+        draw_map(map_coords, player_coords)
         # input handling
         command = keypress_to_command(key)
         running = not command.get('quit', False)
         endgame = command.get('win', False)
         move = command.get('move')
         if move:
+            player_x, player_y = player_coords
             dx, dy = move
-            player_x += dx
-            player_y += dy
+            new_player_x = player_x + dx
+            new_player_y = player_y + dy
+            new_player_coords = new_player_x, new_player_y
+            if check_move(map_coords, new_player_coords):
+                player_coords = new_player_coords
 
 
 
