@@ -1,5 +1,5 @@
 import time
-from typing import NamedTuple
+from typing import List, NamedTuple
 
 import tcod as libtcod
 
@@ -26,8 +26,11 @@ map_height = len(map)
 
 def check_move(
         map_coords: Coordinates,
+        mobs_coords: List[Coordinates],
         move_coords: Coordinates
 ):
+    if move_coords in mobs_coords:
+        return False
     if map_coords.x < move_coords.x < map_coords.x + map_width - 1:
         if map_coords.y < move_coords.y < map_coords.y + map_height - 1:
             return True
@@ -37,6 +40,7 @@ def draw_map(
     map_coords: Coordinates,
     exit_coords: Coordinates,
     player_coords: Coordinates,
+    mobs_coords: List[Coordinates]
 ):
     y = map_coords.y
     for row in map:
@@ -44,6 +48,8 @@ def draw_map(
         for tile in row:
             if x == player_coords.x and y == player_coords.y:
                 tile = '@'
+            elif Coordinates(x, y) in mobs_coords:
+                tile = 'o'
             elif x == exit_coords.x and y == exit_coords.y:
                 tile = '<'
             libtcod.console_put_char(0, x, y, tile, libtcod.BKGND_NONE)
@@ -75,6 +81,11 @@ def main():
     screen_height = 50
     map_coords = Coordinates(0, 0)
     exit_coords = Coordinates(8, 8)
+    mobs_coords = [
+        Coordinates(3, 4),
+        Coordinates(6, 5),
+        Coordinates(2, 7),
+    ]
     player_coords = Coordinates(1, 1)
     libtcod.console_set_custom_font('arial10x10.png', libtcod.FONT_TYPE_GRAYSCALE | libtcod.FONT_LAYOUT_TCOD)
     libtcod.console_init_root(screen_width, screen_height, 'pmrl', False)
@@ -88,14 +99,14 @@ def main():
         libtcod.console_set_default_foreground(0, libtcod.white)
         # endgame sequence
         if endgame:
-            draw_map(map_coords, exit_coords, player_coords)
+            draw_map(map_coords, exit_coords, player_coords, mobs_coords)
             libtcod.console_print(0, 1, 1, 'You win!')
             libtcod.console_flush()
             running = False
             time.sleep(5)
             continue
         # main game loop
-        draw_map(map_coords, exit_coords, player_coords)
+        draw_map(map_coords, exit_coords, player_coords, mobs_coords)
         # input handling
         command = keypress_to_command(key)
         running = not command.get('quit', False)
@@ -106,7 +117,7 @@ def main():
                 player_coords.x + dx,
                 player_coords.y + dy
             )
-            if check_move(map_coords, new_player_coords):
+            if check_move(map_coords, mobs_coords, new_player_coords):
                 player_coords = new_player_coords
         endgame = player_coords == exit_coords
 
