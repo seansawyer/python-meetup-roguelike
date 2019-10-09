@@ -1,7 +1,12 @@
 import time
-from typing import Tuple
+from typing import NamedTuple
 
 import tcod as libtcod
+
+
+class Coordinates(NamedTuple):
+    x: int
+    y: int
 
 map_s = [
     '##########',
@@ -20,27 +25,23 @@ map_width = len(map[0])
 map_height = len(map)
 
 def check_move(
-        map_coords: Tuple[int, int],
-        new_player_coords: Tuple[int, int]
+        map_coords: Coordinates,
+        move_coords: Coordinates
 ):
-    map_x, map_y = map_coords
-    new_player_x, new_player_y = new_player_coords
-    if map_x < new_player_x < map_x + map_width - 1:
-        if map_y < new_player_y < map_y + map_height - 1:
+    if map_coords.x < move_coords.x < map_coords.x + map_width - 1:
+        if map_coords.y < move_coords.y < map_coords.y + map_height - 1:
             return True
     return False
 
 def draw_map(
-    map_coords: Tuple[int, int],
-    player_coords: Tuple[int, int]
+    map_coords: Coordinates,
+    player_coords: Coordinates,
 ):
-    map_x, map_y = map_coords
-    player_x, player_y = player_coords
-    y = map_y
+    y = map_coords.y
     for row in map:
-        x = map_x
+        x = map_coords.x
         for tile in row:
-            if x == player_x and y == player_y:
+            if x == player_coords.x and y == player_coords.y:
                 libtcod.console_put_char(0, x, y, '@', libtcod.BKGND_NONE)
             #elif x == end_coords[0] and y == end_coords[1]:
             #    print('*', end='')
@@ -73,13 +74,11 @@ def keypress_to_command(key: libtcod.Key):
 def main():
     screen_width = 80
     screen_height = 50
-    map_x = 0
-    map_y = 0
-    player_coords = (
-        int((map_x + map_width) / 2),
-        int((map_y + map_height) / 2),
+    map_coords = Coordinates(0, 0)
+    player_coords = Coordinates(
+        int((map_coords.x + map_width) / 2),
+        int((map_coords.y + map_height) / 2),
     )
-    map_coords = (0, 0)
     libtcod.console_set_custom_font('arial10x10.png', libtcod.FONT_TYPE_GRAYSCALE | libtcod.FONT_LAYOUT_TCOD)
     libtcod.console_init_root(screen_width, screen_height, 'pmrl', False)
     # set up input devices
@@ -105,16 +104,13 @@ def main():
         endgame = command.get('win', False)
         move = command.get('move')
         if move:
-            player_x, player_y = player_coords
             dx, dy = move
-            new_player_x = player_x + dx
-            new_player_y = player_y + dy
-            new_player_coords = new_player_x, new_player_y
+            new_player_coords = Coordinates(
+                player_coords.x + dx,
+                player_coords.y + dy
+            )
             if check_move(map_coords, new_player_coords):
                 player_coords = new_player_coords
-
-
-
 
 
 if __name__ == '__main__':
