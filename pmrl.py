@@ -93,6 +93,11 @@ def main():
         Coordinates(6, 5),
         Coordinates(2, 7),
     ]
+    mobs_hp = [
+        5,
+        4,
+        3,
+    ]
     player_coords = Coordinates(1, 1)
     player_hp = 10
     libtcod.console_set_custom_font('arial10x10.png', libtcod.FONT_TYPE_GRAYSCALE | libtcod.FONT_LAYOUT_TCOD)
@@ -129,10 +134,17 @@ def main():
                 player_coords.x + dx,
                 player_coords.y + dy
             )
-            if is_mob(new_player_coords, mobs_coords):
+            try:
+                mob_i = mobs_coords.index(new_player_coords)
+            except ValueError:
+                if not is_wall(new_player_coords, map_coords):
+                    player_coords = new_player_coords
+            else:
                 player_hp -= 1
-            elif not is_wall(new_player_coords, map_coords):
-                player_coords = new_player_coords
+                mobs_hp[mob_i] -= 1
+                if mobs_hp[mob_i] == 0:
+                    del mobs_coords[mob_i]
+                    del mobs_hp[mob_i]
         dying = player_hp == 0
         winning = player_coords == exit_coords
 
