@@ -77,8 +77,8 @@ def keypress_to_command(key: libtcod.Key):
     return key_vk_command_map.get(key.vk, {})
 
 def main():
-    screen_width = 80
-    screen_height = 50
+    screen_width = map_width
+    screen_height = map_height + 2
     map_coords = Coordinates(0, 0)
     exit_coords = Coordinates(8, 8)
     mobs_coords = [
@@ -100,7 +100,8 @@ def main():
         # endgame sequence
         if endgame:
             draw_map(map_coords, exit_coords, player_coords, mobs_coords)
-            libtcod.console_print(0, 1, 1, 'You win!')
+            msg_y = map_coords.y + map_height + 1
+            libtcod.console_print(0, 0, msg_y, 'You win!')
             libtcod.console_flush()
             running = False
             time.sleep(5)
