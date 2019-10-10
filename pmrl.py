@@ -24,17 +24,25 @@ map = [list(r) for r in map_s]
 map_width = len(map[0])
 map_height = len(map)
 
-def check_move(
-        map_coords: Coordinates,
-        mobs_coords: List[Coordinates],
-        move_coords: Coordinates
+def is_mob(coords: Coordinates, mobs_coords: List[Coordinates]):
+    return coords in mobs_coords
+
+def is_wall(coords: Coordinates, map_coords: Coordinates):
+    # Is it even in the map?
+    if not map_coords.x <= coords.x < map_coords.x + map_width:
+        return True
+    if not map_coords.y <= coords.y < map_coords.y + map_height:
+        return True
+    # Is it a wall tile?
+    tile = map[coords.y][coords.x]
+    return tile == '#'
+
+def draw_status(
+    map_coords: Coordinates,
+    player_hp: int
 ):
-    if move_coords in mobs_coords:
-        return False
-    if map_coords.x < move_coords.x < map_coords.x + map_width - 1:
-        if map_coords.y < move_coords.y < map_coords.y + map_height - 1:
-            return True
-    return False
+    msg = f'HP: {player_hp:2}'
+    libtcod.console_print(0, 0, map_coords.y + map_height, msg)
 
 def draw_map(
     map_coords: Coordinates,
@@ -55,7 +63,6 @@ def draw_map(
             libtcod.console_put_char(0, x, y, tile, libtcod.BKGND_NONE)
             x += 1
         y += 1
-    libtcod.console_flush()
 
 def keypress_to_command(key: libtcod.Key):
     key_vk_command_map = {
@@ -87,27 +94,31 @@ def main():
         Coordinates(2, 7),
     ]
     player_coords = Coordinates(1, 1)
+    player_hp = 10
     libtcod.console_set_custom_font('arial10x10.png', libtcod.FONT_TYPE_GRAYSCALE | libtcod.FONT_LAYOUT_TCOD)
     libtcod.console_init_root(screen_width, screen_height, 'pmrl', False)
     # set up input devices
     key = libtcod.Key()
     mouse = libtcod.Mouse()
     running = True
-    endgame = False
+    dying = False
+    winning = False
     while running and not libtcod.console_is_window_closed():
         libtcod.sys_check_for_event(libtcod.EVENT_KEY_PRESS, key, mouse)
         libtcod.console_set_default_foreground(0, libtcod.white)
+        # update the screen
+        draw_map(map_coords, exit_coords, player_coords, mobs_coords)
+        draw_status(map_coords, player_hp)
+        libtcod.console_flush()
         # endgame sequence
-        if endgame:
-            draw_map(map_coords, exit_coords, player_coords, mobs_coords)
+        if dying or winning:
             msg_y = map_coords.y + map_height + 1
-            libtcod.console_print(0, 0, msg_y, 'You win!')
+            msg = 'You win!' if winning else 'You die.'
+            libtcod.console_print(0, 0, msg_y, msg)
             libtcod.console_flush()
             running = False
             time.sleep(5)
             continue
-        # main game loop
-        draw_map(map_coords, exit_coords, player_coords, mobs_coords)
         # input handling
         command = keypress_to_command(key)
         running = not command.get('quit', False)
@@ -118,9 +129,12 @@ def main():
                 player_coords.x + dx,
                 player_coords.y + dy
             )
-            if check_move(map_coords, mobs_coords, new_player_coords):
+            if is_mob(new_player_coords, mobs_coords):
+                player_hp -= 1
+            elif not is_wall(new_player_coords, map_coords):
                 player_coords = new_player_coords
-        endgame = player_coords == exit_coords
+        dying = player_hp == 0
+        winning = player_coords == exit_coords
 
 
 if __name__ == '__main__':
