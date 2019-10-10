@@ -1,32 +1,30 @@
 import random
 import time
-from typing import List, NamedTuple
+from typing import Any, Dict, List, NamedTuple
 
 import tcod as libtcod
+
+
+# "Constants"
+screen_width = 80
+screen_height = 50
+map_width = screen_width
+map_height = screen_height - 2
 
 
 class Coordinates(NamedTuple):
     x: int
     y: int
 
-screen_width = 80
-screen_height = 50
-map_width = screen_width
-map_height = screen_height - 2
 
-def generate_map():
+def generate_map() -> List[List[str]]:
     # start with all walls
     map_tiles = [['#'] * map_width for y in range(map_height)]
     # choose a random starting point
     x = random.randint(1, map_width - 2)
     y = random.randint(1, map_height - 2)
     # walk in a random direction
-    possible_moves = [
-        (0, -1),  # up
-        (0, 1),  # down
-        (-1, 0),  # left
-        (1, 0),  # right
-    ]
+    possible_moves = [(0, -1), (0, 1), (-1, 0), (1, 0)]
     map_tiles[y][x] = '.'
     for i in range(10000):
         choice = random.randint(0, len(possible_moves) - 1)
@@ -38,10 +36,17 @@ def generate_map():
     return map_tiles
 
 
-def is_mob(coords: Coordinates, mobs_coords: List[Coordinates]):
+def is_mob(
+    coords: Coordinates,
+    mobs_coords: List[Coordinates]
+) -> bool:
     return coords in mobs_coords
 
-def is_wall(coords: Coordinates, map_tiles: List[List[str]]):
+
+def is_wall(
+    coords: Coordinates,
+    map_tiles: List[List[str]]
+) -> bool:
     # Is it even in the map?
     if not 0 <= coords.x < map_width:
         return True
@@ -51,21 +56,23 @@ def is_wall(coords: Coordinates, map_tiles: List[List[str]]):
     tile = map_tiles[coords.y][coords.x]
     return tile == '#'
 
+
 def draw_status(
     status_y: Coordinates,
     player_hp: int
-):
+) -> None:
     msg = f'HP: {player_hp:2}'
     libtcod.console_set_default_foreground(0, libtcod.blue)
     libtcod.console_print(0, 0, status_y, msg)
     libtcod.console_set_default_foreground(0, libtcod.white)
+
 
 def draw_map(
     map_tiles: List[List[str]],
     exit_coords: Coordinates,
     player_coords: Coordinates,
     mobs_coords: List[Coordinates]
-):
+) -> None:
     y = 0
     for row in map_tiles:
         x = 0
@@ -86,7 +93,10 @@ def draw_map(
             x += 1
         y += 1
 
-def keypress_to_command(key: libtcod.Key):
+
+def keypress_to_command(
+    key: libtcod.Key
+) -> Dict[str, Any]:
     key_vk_command_map = {
         libtcod.KEY_ESCAPE: {'quit': True},
         libtcod.KEY_UP: {'move': (0, -1)},
@@ -105,7 +115,11 @@ def keypress_to_command(key: libtcod.Key):
         return key_char_command_map.get(chr(key.c), {})
     return key_vk_command_map.get(key.vk, {})
 
-def choose_random_open_tile(map_tiles: List[List[str]], occupied_coords: List[Coordinates]):
+
+def choose_random_open_tile(
+    map_tiles: List[List[str]],
+    occupied_coords: List[Coordinates]
+) -> Coordinates:
     coords = None
     tile = '#'
     while tile != '.' and coords not in occupied_coords:
@@ -116,7 +130,8 @@ def choose_random_open_tile(map_tiles: List[List[str]], occupied_coords: List[Co
     occupied_coords.append(coords)
     return coords
 
-def main():
+
+def main() -> None:
     map_tiles = generate_map()
     # pick a random tile to place the exit
     occupied_coords = []
@@ -218,6 +233,7 @@ def main():
         mobs_hp = [hp for _, hp in filter(lambda e: e[0] not in dead_mobs, enumerate(mobs_hp))]
         dying = player_hp == 0
         winning = player_coords == exit_coords
+
 
 if __name__ == '__main__':
     main()
