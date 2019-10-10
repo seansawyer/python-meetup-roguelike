@@ -1,3 +1,4 @@
+import random
 import time
 from typing import List, NamedTuple
 
@@ -108,7 +109,9 @@ def main():
     running = True
     dying = False
     winning = False
+    turn_counter = 0
     while running and not libtcod.console_is_window_closed():
+        turn_counter += 1
         libtcod.sys_check_for_event(libtcod.EVENT_KEY_PRESS, key, mouse)
         libtcod.console_set_default_foreground(0, libtcod.white)
         # update the screen
@@ -126,6 +129,39 @@ def main():
             continue
         # input handling
         command = keypress_to_command(key)
+        if not command:
+            continue
+        # move mobs first
+        dead_mobs = set()
+        for mob_i, mob_coords in enumerate(mobs_coords):
+            # choose a random move
+            possible_moves = [
+                (0, 0),  # stay
+                (0, -1),  # up
+                (0, 1),  # down
+                (-1, 0),  # left
+                (1, 0),  # right
+            ]
+            choice = random.randint(0, len(possible_moves) - 1)
+            mob_move = possible_moves[choice]
+            mob_dx, mob_dy = mob_move
+            new_mob_coords = Coordinates(
+                mob_coords.x + mob_dx,
+                mob_coords.y + mob_dy
+            )
+            if new_mob_coords == player_coords:
+                player_hp -= 1
+                mobs_hp[mob_i] -= 1
+                if mobs_hp[mob_i] == 0:
+                    dead_mobs.add(mob_i)
+            elif not is_wall(new_mob_coords, map_coords):
+                # check if it's another mob
+                try:
+                    is_other_mob = mob_i == mobs_coords.index(new_mob_coords)
+                except ValueError:
+                    is_other_mob = False
+                if not is_other_mob:
+                    mobs_coords[mob_i] = new_mob_coords
         running = not command.get('quit', False)
         move = command.get('move')
         if move:
@@ -143,11 +179,13 @@ def main():
                 player_hp -= 1
                 mobs_hp[mob_i] -= 1
                 if mobs_hp[mob_i] == 0:
-                    del mobs_coords[mob_i]
-                    del mobs_hp[mob_i]
+                    dead_mobs.add(mob_i)
+        # new mobs are all that are not dead
+        # find the indices of the dead ones
+        mobs_coords = [coords for _, coords in filter(lambda e: e[0] not in dead_mobs, enumerate(mobs_coords))]
+        mobs_hp = [hp for _, hp in filter(lambda e: e[0] not in dead_mobs, enumerate(mobs_hp))]
         dying = player_hp == 0
         winning = player_coords == exit_coords
-
 
 if __name__ == '__main__':
     main()
