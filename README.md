@@ -8,11 +8,34 @@ A little game I wrote for a talk on roguelike game development in Python at PyAT
 
 ### First time setup
 
+Clone and enter the project directory:
+
+```
+git clone https://github.com/seansawyer/python-meetup-roguelike.git
+cd python-meetup-roguelike
+```
+
+Then, if you are using pyenv:
+
+```
+pyenv virtualenv 3.7.4 pmrl-3.7.4
+pyenv activate pmrl-3.7.4
+pip install -r requirements.txt
+```
+
+Or if you are using your system Python (3.7+):
+
 ```
 python3 -m venv ./env
 source env/bin/activate
-# Now that you're in your virtual environment...
 pip install -r requirements.txt
+```
+
+Now you may run the application:
+
+```
+# In your virtual environment...
+python pmrl.py
 ```
 
 ### Upgrade dependencies
