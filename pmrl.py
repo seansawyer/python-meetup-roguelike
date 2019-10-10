@@ -121,16 +121,12 @@ def main():
     # pick a random tile to place the exit
     occupied_coords = []
     exit_coords = choose_random_open_tile(map_tiles, occupied_coords)
+    num_mobs = 40
     mobs_coords = [
-        choose_random_open_tile(map_tiles, occupied_coords),
-        choose_random_open_tile(map_tiles, occupied_coords),
-        choose_random_open_tile(map_tiles, occupied_coords),
+        choose_random_open_tile(map_tiles, occupied_coords)
+        for i in range(num_mobs)
     ]
-    mobs_hp = [
-        5,
-        4,
-        3,
-    ]
+    mobs_hp = [random.randint(1, 5) for i in range(num_mobs)]
     # pick a random tile to place the player
     tile = '#'
     player_coords = choose_random_open_tile(map_tiles, occupied_coords)
