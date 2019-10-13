@@ -231,7 +231,7 @@ def main() -> None:
         # find the indices of the dead ones
         mobs_coords = [coords for _, coords in filter(lambda e: e[0] not in dead_mobs, enumerate(mobs_coords))]
         mobs_hp = [hp for _, hp in filter(lambda e: e[0] not in dead_mobs, enumerate(mobs_hp))]
-        dying = player_hp == 0
+        dying = player_hp <= 0
         winning = player_coords == exit_coords
 
 
