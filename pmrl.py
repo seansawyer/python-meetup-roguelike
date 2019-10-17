@@ -2,7 +2,7 @@
 
 import random
 import time
-from typing import Any, Dict, NamedTuple
+from typing import Any, Dict, NamedTuple, Set, Tuple
 
 import tcod as libtcod
 
@@ -148,60 +148,67 @@ class PMRL(object):
             if not command:
                 continue
             # move mobs first
-            dead_mobs = set()
-            for mob_i, mob_coords in enumerate(self.mobs_coords):
-                # choose a random move
-                possible_moves = [
-                    (0, 0),  # stay
-                    (0, -1),  # up
-                    (0, 1),  # down
-                    (-1, 0),  # left
-                    (1, 0),  # right
-                ]
-                choice = random.randint(0, len(possible_moves) - 1)
-                mob_move = possible_moves[choice]
-                mob_dx, mob_dy = mob_move
-                new_mob_coords = Coordinates(
-                    mob_coords.x + mob_dx,
-                    mob_coords.y + mob_dy
-                )
-                if new_mob_coords == self.player_coords:
-                    self.player_hp -= 1
-                    self.mobs_hp[mob_i] -= 1
-                    if self.mobs_hp[mob_i] == 0:
-                        dead_mobs.add(mob_i)
-                elif not self.is_wall(new_mob_coords):
-                    # check if it's another mob
-                    try:
-                        is_other_mob = mob_i == self.mobs_coords.index(new_mob_coords)
-                    except ValueError:
-                        is_other_mob = False
-                    if not is_other_mob:
-                        self.mobs_coords[mob_i] = new_mob_coords
+            dead_mobs = self.move_mobs()
             self.running = not command.get('quit', False)
-            move = command.get('move')
-            if move:
-                dx, dy = move
-                new_player_coords = Coordinates(
-                    self.player_coords.x + dx,
-                    self.player_coords.y + dy
-                )
-                try:
-                    mob_i = self.mobs_coords.index(new_player_coords)
-                except ValueError:
-                    if not self.is_wall(new_player_coords):
-                        self.player_coords = new_player_coords
-                else:
-                    self.player_hp -= 1
-                    self.mobs_hp[mob_i] -= 1
-                    if self.mobs_hp[mob_i] == 0:
-                        dead_mobs.add(mob_i)
+            self.move_player(command.get('move'), dead_mobs)
             # new mobs are all that are not dead
             # find the indices of the dead ones
             self.mobs_coords = [coords for _, coords in filter(lambda e: e[0] not in dead_mobs, enumerate(self.mobs_coords))]
             self.mobs_hp = [hp for _, hp in filter(lambda e: e[0] not in dead_mobs, enumerate(self.mobs_hp))]
             self.dying = self.player_hp <= 0
             self.winning = self.player_coords == self.exit_coords
+
+    def move_mobs(self) -> Set[int]:
+        dead_mobs = set()
+        for mob_i, mob_coords in enumerate(self.mobs_coords):
+            # choose a random move
+            possible_moves = [
+                (0, 0),  # stay
+                (0, -1),  # up
+                (0, 1),  # down
+                (-1, 0),  # left
+                (1, 0),  # right
+            ]
+            choice = random.randint(0, len(possible_moves) - 1)
+            mob_move = possible_moves[choice]
+            mob_dx, mob_dy = mob_move
+            new_mob_coords = Coordinates(
+                mob_coords.x + mob_dx,
+                mob_coords.y + mob_dy
+            )
+            if new_mob_coords == self.player_coords:
+                self.player_hp -= 1
+                self.mobs_hp[mob_i] -= 1
+                if self.mobs_hp[mob_i] == 0:
+                    dead_mobs.add(mob_i)
+            elif not self.is_wall(new_mob_coords):
+                # check if it's another mob
+                try:
+                    is_other_mob = mob_i == self.mobs_coords.index(new_mob_coords)
+                except ValueError:
+                    is_other_mob = False
+                if not is_other_mob:
+                    self.mobs_coords[mob_i] = new_mob_coords
+        return dead_mobs
+
+    def move_player(self, move: Tuple[int, int], dead_mobs: Set[int]) -> None:
+        if not move:
+            return
+        dx, dy = move
+        new_player_coords = Coordinates(
+            self.player_coords.x + dx,
+            self.player_coords.y + dy
+        )
+        try:
+            mob_i = self.mobs_coords.index(new_player_coords)
+        except ValueError:
+            if not self.is_wall(new_player_coords):
+                self.player_coords = new_player_coords
+        else:
+            self.player_hp -= 1
+            self.mobs_hp[mob_i] -= 1
+            if self.mobs_hp[mob_i] == 0:
+                dead_mobs.add(mob_i)
 
     def is_wall(self, coords: Coordinates) -> bool:
         # Is it even in the map?
