@@ -3,4 +3,5 @@ cffi==1.12.3
 numpy==1.17.2
 pycparser==2.19
 PyInstaller==3.5
-tcod==11.4.0
+tcod==11.4.1
+
