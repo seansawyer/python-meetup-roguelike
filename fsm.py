@@ -1,7 +1,9 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Callable, Dict, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Set, Tuple
+import random
 
+import numpy as np
 import tcod
 import tcod.event
 
@@ -10,13 +12,36 @@ CONSOLE_HEIGHT = 50
 
 
 @dataclass
+class Mob:
+    hp: int
+
+
+@dataclass
 class Game:
     # drawing context
     root_console: tcod.console.Console
     draw_console: tcod.console.Console
     # player state
-    player_x: int = CONSOLE_WIDTH // 2
-    player_y: int = CONSOLE_HEIGHT // 2
+    player_x: int
+    player_y: int
+    player_hp: int
+    # world state
+    map_tiles: List[List[str]]
+    occupied_coords: Set[Tuple[int, int]]
+    mobs: Dict[Tuple[int, int], Mob]
+    fov_map: tcod.map.Map
+    memory: np.ndarray
+    exit_x: int
+    exit_y: int
+    # meta state
+    map_height: int
+    map_width: int
+    dialog_height: int
+    dialog_width: int
+    stats_height: int
+    stats_width: int
+    messages: List[str] = field(default_factory=list)
+    won: Optional[bool] = None  # True if won, False if lost, None if in progress
 
 
 class State(Enum):
@@ -31,12 +56,34 @@ class StateHandler(tcod.event.EventDispatch):
         self.game = game
 
     def handle(self) -> Tuple[Optional[State], Game]:
+        # maybe move draw out into a mixin?
+        # or put it in a before event dispatch hook?
         self.draw()
+        # self.before_event_dispatch()
         for event in tcod.event.wait():
+            print(f'dispatched: {event}')
             self.dispatch(event)
+        # self.after_event_dispatch()
         return self.next_state, self.game
 
     def draw(self) -> None:
+        pass
+
+    def on_enter_state(self):
+        # this would be where you would draw the initial map in the map state
+        pass
+
+    def on_exit_state(self):
+        pass
+
+    def on_reenter_state(self):
+        # this would be where you would redraw the map after the previous iteration's moves
+        pass
+
+    def before_event_dispatch(self):
+        pass
+
+    def after_event_dispatch(self):
         pass
 
 
@@ -44,10 +91,61 @@ class MapStateHandler(StateHandler):
 
     def draw(self):
         self.game.draw_console.clear()
-        self.game.draw_console.put_char(
+        self.game.draw_console.draw_frame(
+            0,
+            self.game.map_height,
+            self.game.dialog_width,
+            self.game.dialog_height,
+            title='Messages'
+        )
+        for i, msg in enumerate(self.game.messages[-6:]):
+            self.game.draw_console.print(
+                2,
+                self.game.map_height + 2 + i,
+                msg
+            )
+        self.game.draw_console.draw_frame(
+            self.game.dialog_width,
+            self.game.map_height,
+            self.game.stats_width,
+            self.game.stats_height,
+            title='Stats'
+        )
+        self.game.draw_console.print(
+            self.game.dialog_width + 2,
+            self.game.map_height + 2,
+            f'Health: {self.game.player_hp}',
+            fg=tcod.red
+        )
+        # Draw visible (white) and previously visible (gray) walls and floors.
+        for y, row in enumerate(self.game.map_tiles):
+            for x, tile in enumerate(row):
+                if self.game.fov_map.fov[y][x]:
+                    self.game.draw_console.draw_rect(x, y, 1, 1, ord(tile), fg=tcod.white)
+                elif self.game.memory[y][x]:
+                    self.game.draw_console.draw_rect(x, y, 1, 1, ord(tile), fg=tcod.dark_gray)
+        # Draw the exit if it is visible or was previously visible.
+        if self.game.fov_map.fov[self.game.exit_y][self.game.exit_x] or self.game.memory[self.game.exit_y][self.game.exit_x]:
+            self.game.draw_console.draw_rect(
+                self.game.exit_x,
+                self.game.exit_y,
+                1,
+                1,
+                ord('<'),
+                fg=tcod.green
+            )
+        # Draw the mobs after the exit, so they can hide it by standing on it. ;)
+        for mob_x, mob_y in self.game.mobs.keys():
+            if self.game.fov_map.fov[mob_y][mob_x]:
+                self.game.draw_console.draw_rect(mob_x, mob_y, 1, 1, ord('O'), fg=tcod.red)
+        # Always draw the player.
+        self.game.draw_console.draw_rect(
             self.game.player_x,
             self.game.player_y,
-            ord('@')
+            1,
+            1,
+            ord('@'),
+            fg=tcod.yellow
         )
         self.game.draw_console.blit(
             self.game.root_console,
@@ -69,24 +167,149 @@ class MapStateHandler(StateHandler):
         elif event.scancode == tcod.event.SCANCODE_W:
             self.next_state = State.ENDGAME
         elif event.scancode == tcod.event.SCANCODE_H:
-            # left
-            self.game.player_x = max(0, self.game.player_x - 1)
+            self.maybe_move(-1, 0)  # left
         elif event.scancode == tcod.event.SCANCODE_J:
-            # down
-            self.game.player_y = min(CONSOLE_HEIGHT - 1, self.game.player_y + 1)
+            self.maybe_move(0, 1)  # down
         elif event.scancode == tcod.event.SCANCODE_K:
-            # up
-            self.game.player_y = max(0, self.game.player_y - 1)
+            self.maybe_move(0, -1)  # up
         elif event.scancode == tcod.event.SCANCODE_L:
-            # right
-            self.game.player_x = min(CONSOLE_WIDTH - 1, self.game.player_x + 1)
+            self.maybe_move(1, 0)  # right
+
+    def handle_attack(self, coords: Tuple[int, int], mob: Mob):
+        # We let the player strike first, then check if the mob is dead prior
+        # to counterattack. This gives the player a slight advantage.
+        mob.hp -= 1
+        self.game.messages.append('Your hit an orc.')
+        if mob.hp <= 0:
+            self.game.mobs.pop(coords)
+            self.game.occupied_coords.remove(coords)
+        else:
+            self.game.player_hp -= 1
+            self.game.messages.append('An orc hits you.')
+        # If the player's hit points reach zero, they lose of course!
+        if self.game.player_hp <= 0:
+            self.game.won = False
+            self.next_state = State.ENDGAME
+
+    def handle_move(self, dx, dy):
+        # When moving left, don't let x go below zero
+        # When moving right, don't let x reach the console width
+        if dx < 0:
+            limit_x_fn = max
+            limit_x = 0
+        else:
+            limit_x_fn = min
+            limit_x = self.game.map_width - 1
+        # When moving up, don't let y go below zero
+        # When moving down, don't let x reach the console height
+        if dy < 0:
+            limit_y_fn = max
+            limit_y = 0
+        else:
+            limit_y_fn = min
+            limit_y = self.game.map_height - 1
+        # Move the player and record their new position
+        self.game.occupied_coords.remove((self.game.player_x, self.game.player_y))
+        self.game.player_x = limit_x_fn(limit_x, self.game.player_x + dx)
+        self.game.player_y = limit_y_fn(limit_y, self.game.player_y + dy)
+        self.game.occupied_coords.add((self.game.player_x, self.game.player_y))
+
+    def maybe_move(self, dx, dy):
+        # A move can imply an action, like attacking a mob, opening a
+        # closed door, opening a chest, etc.
+        coords, action_type, action_target = self.check_move(dx, dy)
+        if not action_type:
+            # This indicates that the action is blocked. We skip the entirely
+            # if the player tries to make a bogus move rather than penalize
+            # them by letting all the mobs move.
+            self.game.messages.append('Your path is blocked.')
+            return
+        if action_type == 'attack':
+            self.handle_attack(coords, action_target)
+        elif action_type == 'move':
+            self.handle_move(dx, dy)
+        # Now move the mobs. We freeze the keys view using a list so we can
+        # change the dict as we go.
+        for mob_coords in list(self.game.mobs.keys()):
+            # Choose a random direction
+            mob_move = random.choice([
+                (0, 0),  # sit still
+                (-1, 0),  # left
+                (1, 0),  # right
+                (0, -1),  # up
+                (0, 1),  # down
+            ])
+            # If the mob chose to sit still, skip to the next mob.
+            if not any(mob_move):
+                continue
+            # Mobs only retaliate for now (see handle_attack()) - other than
+            # that they just wander aimlessly. So we ignore moves that would
+            # result in attack.
+            mob_x, mob_y = mob_coords
+            mob_dx, mob_dy = mob_move
+            mob_move_coords, mob_action_type, _ = self.check_move_from(mob_x, mob_y, mob_dx, mob_dy)
+            if mob_action_type == 'move':
+                mob = self.game.mobs.pop(mob_coords)
+                self.game.occupied_coords.remove(mob_coords)
+                self.game.mobs[mob_move_coords] = mob
+                self.game.occupied_coords.add(mob_move_coords)
+        # Send the player to endgame if they reached the exit.
+        player_coords = self.game.player_x, self.game.player_y
+        exit_coords = self.game.exit_x, self.game.exit_y
+        if player_coords == exit_coords:
+            self.game.won = True
+            self.next_state = State.ENDGAME
+        else:
+            # this could be done in the on_reenter_state() hook prior to redraw
+            self.game.fov_map.compute_fov(self.game.player_x, self.game.player_y, 10)
+            self.game.memory |= self.game.fov_map.fov
+
+    def check_move_from(
+        self,
+        from_x: int,
+        from_y: int,
+        dx: int,
+        dy: int,
+        allow_attack: bool = False
+    ) -> Tuple[Tuple[int, int], Optional[str], Optional[Mob]]:
+        x = from_x + dx
+        y = from_y + dy
+        coords = x, y
+        # The exit is a special case - it's considered "occupied" but you can move there
+        # And yes, mobs can stand on it and hide it :)
+        exit_coords = self.game.exit_x, self.game.exit_y
+        if coords == exit_coords:
+            return coords, 'move', None
+        if allow_attack:
+            attack_target = self.game.mobs.get(coords)
+            if attack_target:
+                return coords, 'attack', attack_target
+        if not is_wall(x, y, self.game.map_tiles) and coords not in self.game.occupied_coords:
+            return coords, 'move', None
+        return coords, None, None
+
+    def check_move(self, dx: int, dy: int) -> Tuple[Tuple[int, int], Optional[str], Optional[Mob]]:
+        x = self.game.player_x + dx
+        y = self.game.player_y + dy
+        coords = x, y
+        # The exit is a special case - it's considered "occupied" but you can move there
+        exit_coords = self.game.exit_x, self.game.exit_y
+        if coords == exit_coords:
+            return coords, 'move', None
+        attack_target = self.game.mobs.get(coords)
+        if attack_target:
+            return coords, 'attack', attack_target
+        if not is_wall(x, y, self.game.map_tiles) and coords not in self.game.occupied_coords:
+            return coords, 'move', None
+        return coords, None, None
 
 
 class EndgameStateHandler(StateHandler):
 
     def draw(self):
+        result_msg = 'You win!' if self.game.won else 'You lose.'
         self.game.draw_console.clear()
-        self.game.draw_console.print(1, 1, f'You win!')
+        self.game.draw_console.print(1, 1, result_msg)
         self.game.draw_console.print(1, 3, 'Press R to play again')
         self.game.draw_console.print(1, 5, 'Press Q to quit')
         self.game.draw_console.blit(
@@ -110,10 +333,26 @@ class EndgameStateHandler(StateHandler):
         elif event.scancode == tcod.event.SCANCODE_R:
             # restart
             self.next_state = State.MAP
-            self.game = Game(
-                root_console=self.game.root_console,
-                draw_console=self.game.draw_console
-            )
+            self.game = build_game(self.game.root_console, self.game.draw_console)
+
+
+def run_fsm_fancy(
+        state_handlers: Dict[State, StateHandler],
+        state: State,
+        game: Game
+) -> None:
+    last_state = None
+    while state is not None:
+        handler_class = state_handlers[state]
+        handler = handler_class(state, game)
+        if state != last_state:
+            handler.on_enter_state()
+        else:
+            handler.on_reenter_state()
+        last_state = state
+        state, game = handler.handle()
+        if state != last_state:
+            handler.on_exit_state()
 
 
 def run_fsm(
@@ -127,9 +366,113 @@ def run_fsm(
         state, game = handler.handle()
 
 
+def build_map(width: int, height: int) -> List[List[str]]:
+    # start with all walls
+    map_tiles = [['#'] * width for y in range(height)]
+    # choose a random starting point
+    x = random.randint(1, width - 2)
+    y = random.randint(1, height - 2)
+    # walk in a random direction
+    possible_moves = [(0, -1), (0, 1), (-1, 0), (1, 0)]
+    map_tiles[y][x] = '.'
+    for i in range(10000):
+        choice = random.randint(0, len(possible_moves) - 1)
+        dx, dy = possible_moves[choice]
+        if 0 < x + dx < width - 1 and 0 < y + dy < height - 1:
+            x = x + dx
+            y = y + dy
+        map_tiles[y][x] = '.'
+    return map_tiles
+
+
+def is_wall(
+    x: int,
+    y: int,
+    map_tiles: List[List[str]]
+) -> bool:
+    height = len(map_tiles)
+    width = len(map_tiles[0])
+    # Is it even in the map?
+    if not 0 <= x < width:
+        return True
+    if not 0 <= y < height:
+        return True
+    # Is it a wall tile?
+    tile = map_tiles[y][x]
+    return tile == '#'
+
+
+def place_randomly(
+    map_tiles: List[List[str]],
+    occupied_coords: Set[Tuple[int, int]]
+) -> Tuple[int, int]:
+    height = len(map_tiles)
+    width = len(map_tiles[0])
+    coords = None, None
+    tile = '#'
+    while tile != '.' and coords not in occupied_coords:
+        x = random.randint(1, width - 2)
+        y = random.randint(1, height - 2)
+        coords = x, y
+        tile = map_tiles[y][x]
+    occupied_coords.add(coords)
+    return coords
+
+
+def build_game(
+        root_console: tcod.console.Console,
+        draw_console: tcod.console.Console
+) -> Game:
+    stats_width = 20
+    stats_height = 10
+    dialog_width = CONSOLE_WIDTH - stats_width
+    dialog_height = stats_height
+    map_width = CONSOLE_WIDTH
+    map_height = CONSOLE_HEIGHT - dialog_height
+    map_tiles = build_map(map_width, map_height)
+    occupied_coords = set()
+    mobs_coords = set()
+    player_x, player_y = place_randomly(map_tiles, occupied_coords)
+    exit_x, exit_y = place_randomly(map_tiles, occupied_coords)
+    mobs = {}
+    for i in range(25):
+        mob_coords = place_randomly(map_tiles, occupied_coords)
+        mobs[mob_coords] = Mob(5)
+    fov_map = tcod.map.Map(map_width, map_height)
+    # transparent tiles are everything except the walls
+    # maybe the stairs should be opaque also?
+    for y, row in enumerate(map_tiles):
+        for x, tile in enumerate(row):
+            if tile != '#':
+                fov_map.transparent[y][x] = True
+    fov_map.compute_fov(player_x, player_y, 10)
+    memory = np.copy(fov_map.fov)
+    return Game(
+        root_console=root_console,
+        draw_console=draw_console,
+        player_x=player_x,
+        player_y=player_y,
+        player_hp=10,
+        map_tiles=map_tiles,
+        occupied_coords=occupied_coords,
+        mobs=mobs,
+        fov_map=fov_map,
+        memory=memory,
+        exit_x=exit_x,
+        exit_y=exit_y,
+        map_width=map_width,
+        map_height=map_height,
+        dialog_width=dialog_width,
+        dialog_height=dialog_height,
+        stats_width=stats_width,
+        stats_height=stats_height
+    )
+
+
+
 def main():
     tcod.console_set_custom_font(
-        "arial10x10.png",
+        'arial10x10.png',
         tcod.FONT_LAYOUT_TCOD | tcod.FONT_TYPE_GREYSCALE,
     )
     with tcod.console_init_root(
@@ -141,11 +484,11 @@ def main():
             vsync=True
     ) as root_console:
         draw_console = tcod.console.Console(CONSOLE_WIDTH, CONSOLE_HEIGHT, order='F')
-        game = Game(root_console=root_console, draw_console=draw_console)
         my_state_handlers = {
             State.MAP: MapStateHandler,
             State.ENDGAME: EndgameStateHandler,
         }
+        game = build_game(root_console, draw_console)
         run_fsm(my_state_handlers, State.MAP, game)
 
 
