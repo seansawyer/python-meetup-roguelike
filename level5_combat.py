@@ -193,8 +193,8 @@ class MapStateHandler(StateHandler):
         # A move can imply an action, like attacking a mob, opening a
         # closed door, opening a chest, etc.
         coords, action_type, action_target = self.check_move(
-            self.player_x,
-            self.player_y,
+            self.game.player_x,
+            self.game.player_y,
             dx,
             dy,
             allow_attack=True
