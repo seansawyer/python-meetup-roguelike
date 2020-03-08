@@ -52,113 +52,129 @@ class State(Enum):
 class StateHandler(tcod.event.EventDispatch):
 
     def __init__(self, next_state: Optional[State], game: Game) -> None:
+        """Constructor"""
         self.next_state = next_state
         self.game = game
 
     def handle(self) -> Tuple[Optional[State], Game]:
-        # maybe move draw out into a mixin?
-        # or put it in a before event dispatch hook?
-        self.draw()
-        # self.before_event_dispatch()
+        """
+        Dispatch pending input events to handler methods, and then return the
+        next state and a game instance to use in that state.
+        """
         for event in tcod.event.wait():
-            print(f'dispatched: {event}')
             self.dispatch(event)
-        # self.after_event_dispatch()
         return self.next_state, self.game
 
     def draw(self) -> None:
+        """Override this to draw the screen for this state."""
         pass
 
-    def on_enter_state(self):
-        # this would be where you would draw the initial map in the map state
+    def on_enter_state(self) -> None:
+        self.draw()
+        blit_and_flush(self.game.draw_console, self.game.root_console)
+
+    def on_reenter_state(self) -> None:
+        self.draw()
+        blit_and_flush(self.game.draw_console, self.game.root_console)
+
+    def on_exit_state(self) -> None:
         pass
 
-    def on_exit_state(self):
-        pass
 
-    def on_reenter_state(self):
-        # this would be where you would redraw the map after the previous iteration's moves
-        pass
+def blit_and_flush(
+        from_console: tcod.console.Console,
+        to_console: tcod.console.Console
+) -> None:
+    from_console.blit(
+        to_console,
+        width=from_console.width,
+        height=from_console.height
+    )
+    tcod.console_flush()
 
-    def before_event_dispatch(self):
-        pass
 
-    def after_event_dispatch(self):
-        pass
+def draw_endgame(game: Game):
+        result_msg = 'You win!' if game.won else 'You lose.'
+        game.draw_console.clear()
+        game.draw_console.print(1, 1, result_msg)
+        game.draw_console.print(1, 3, 'Press R to play again')
+        game.draw_console.print(1, 5, 'Press Q to quit')
+        game.draw_console.blit(
+            game.root_console,
+            width=game.draw_console.width,
+            height=game.draw_console.height
+        )
+        tcod.console_flush()
 
+
+def draw_map(game: Game) -> None:
+    game.draw_console.clear()
+    game.draw_console.draw_frame(
+        0,
+        game.map_height,
+        game.dialog_width,
+        game.dialog_height,
+        title='Messages'
+    )
+    for i, msg in enumerate(game.messages[-6:]):
+        game.draw_console.print(
+            2,
+            game.map_height + 2 + i,
+            msg
+        )
+    game.draw_console.draw_frame(
+        game.dialog_width,
+        game.map_height,
+        game.stats_width,
+        game.stats_height,
+        title='Stats'
+    )
+    game.draw_console.print(
+        game.dialog_width + 2,
+        game.map_height + 2,
+        f'Health: {game.player_hp}',
+        fg=tcod.red
+    )
+    # Draw visible (white) and previously visible (gray) walls and floors.
+    for y, row in enumerate(game.map_tiles):
+        for x, tile in enumerate(row):
+            if game.fov_map.fov[y][x]:
+                game.draw_console.draw_rect(x, y, 1, 1, ord(tile), fg=tcod.white)
+            elif game.memory[y][x]:
+                game.draw_console.draw_rect(x, y, 1, 1, ord(tile), fg=tcod.dark_gray)
+    # Draw the exit if it is visible or was previously visible.
+    if game.fov_map.fov[game.exit_y][game.exit_x] or game.memory[game.exit_y][game.exit_x]:
+        game.draw_console.draw_rect(
+            game.exit_x,
+            game.exit_y,
+            1,
+            1,
+            ord('<'),
+            fg=tcod.green
+        )
+    # Draw the mobs after the exit, so they can hide it by standing on it. ;)
+    for mob_x, mob_y in game.mobs.keys():
+        if game.fov_map.fov[mob_y][mob_x]:
+            game.draw_console.draw_rect(mob_x, mob_y, 1, 1, ord('O'), fg=tcod.red)
+    # Always draw the player.
+    game.draw_console.draw_rect(
+        game.player_x,
+        game.player_y,
+        1,
+        1,
+        ord('@'),
+        fg=tcod.yellow
+    )
 
 class MapStateHandler(StateHandler):
 
     def draw(self):
-        self.game.draw_console.clear()
-        self.game.draw_console.draw_frame(
-            0,
-            self.game.map_height,
-            self.game.dialog_width,
-            self.game.dialog_height,
-            title='Messages'
-        )
-        for i, msg in enumerate(self.game.messages[-6:]):
-            self.game.draw_console.print(
-                2,
-                self.game.map_height + 2 + i,
-                msg
-            )
-        self.game.draw_console.draw_frame(
-            self.game.dialog_width,
-            self.game.map_height,
-            self.game.stats_width,
-            self.game.stats_height,
-            title='Stats'
-        )
-        self.game.draw_console.print(
-            self.game.dialog_width + 2,
-            self.game.map_height + 2,
-            f'Health: {self.game.player_hp}',
-            fg=tcod.red
-        )
-        # Draw visible (white) and previously visible (gray) walls and floors.
-        for y, row in enumerate(self.game.map_tiles):
-            for x, tile in enumerate(row):
-                if self.game.fov_map.fov[y][x]:
-                    self.game.draw_console.draw_rect(x, y, 1, 1, ord(tile), fg=tcod.white)
-                elif self.game.memory[y][x]:
-                    self.game.draw_console.draw_rect(x, y, 1, 1, ord(tile), fg=tcod.dark_gray)
-        # Draw the exit if it is visible or was previously visible.
-        if self.game.fov_map.fov[self.game.exit_y][self.game.exit_x] or self.game.memory[self.game.exit_y][self.game.exit_x]:
-            self.game.draw_console.draw_rect(
-                self.game.exit_x,
-                self.game.exit_y,
-                1,
-                1,
-                ord('<'),
-                fg=tcod.green
-            )
-        # Draw the mobs after the exit, so they can hide it by standing on it. ;)
-        for mob_x, mob_y in self.game.mobs.keys():
-            if self.game.fov_map.fov[mob_y][mob_x]:
-                self.game.draw_console.draw_rect(mob_x, mob_y, 1, 1, ord('O'), fg=tcod.red)
-        # Always draw the player.
-        self.game.draw_console.draw_rect(
-            self.game.player_x,
-            self.game.player_y,
-            1,
-            1,
-            ord('@'),
-            fg=tcod.yellow
-        )
-        self.game.draw_console.blit(
-            self.game.root_console,
-            width=self.game.draw_console.width,
-            height=self.game.draw_console.height
-        )
-        tcod.console_flush()
+        draw_map(self.game)
 
     def ev_quit(self, event):
         self.next_state = None
 
     def ev_keydown(self, event):
-        print(event)
         if event.scancode == tcod.event.SCANCODE_F:
             fullscreen = not tcod.console_is_fullscreen()
             tcod.console_set_fullscreen(fullscreen)
@@ -307,17 +323,7 @@ class MapStateHandler(StateHandler):
 class EndgameStateHandler(StateHandler):
 
     def draw(self):
-        result_msg = 'You win!' if self.game.won else 'You lose.'
-        self.game.draw_console.clear()
-        self.game.draw_console.print(1, 1, result_msg)
-        self.game.draw_console.print(1, 3, 'Press R to play again')
-        self.game.draw_console.print(1, 5, 'Press Q to quit')
-        self.game.draw_console.blit(
-            self.game.root_console,
-            width=self.game.draw_console.width,
-            height=self.game.draw_console.height
-        )
-        tcod.console_flush()
+        draw_endgame(self.game)
 
     def ev_quit(self, event):
         self.next_state = None
@@ -336,7 +342,7 @@ class EndgameStateHandler(StateHandler):
             self.game = build_game(self.game.root_console, self.game.draw_console)
 
 
-def run_fsm_fancy(
+def run_fsm(
         state_handlers: Dict[State, StateHandler],
         state: State,
         game: Game
@@ -345,25 +351,14 @@ def run_fsm_fancy(
     while state is not None:
         handler_class = state_handlers[state]
         handler = handler_class(state, game)
-        if state != last_state:
-            handler.on_enter_state()
-        else:
+        if state == last_state:
             handler.on_reenter_state()
+        else:
+            handler.on_enter_state()
         last_state = state
         state, game = handler.handle()
         if state != last_state:
             handler.on_exit_state()
-
-
-def run_fsm(
-        state_handlers: Dict[State, StateHandler],
-        state: State,
-        game: Game
-) -> None:
-    while state is not None:
-        handler_class = state_handlers[state]
-        handler = handler_class(state, game)
-        state, game = handler.handle()
 
 
 def build_map(width: int, height: int) -> List[List[str]]:
@@ -439,8 +434,7 @@ def build_game(
         mob_coords = place_randomly(map_tiles, occupied_coords)
         mobs[mob_coords] = Mob(5)
     fov_map = tcod.map.Map(map_width, map_height)
-    # transparent tiles are everything except the walls
-    # maybe the stairs should be opaque also?
+    # Transparent tiles are everything except the walls.
     for y, row in enumerate(map_tiles):
         for x, tile in enumerate(row):
             if tile != '#':
@@ -467,7 +461,6 @@ def build_game(
         stats_width=stats_width,
         stats_height=stats_height
     )
-
 
 
 def main():
