@@ -30,17 +30,11 @@ class Game:
     occupied_coords: Set[Tuple[int, int]]
     mobs: Dict[Tuple[int, int], Mob]
     fov_map: tcod.map.Map
-    memory: np.ndarray
     exit_x: int
     exit_y: int
     # meta state
     map_height: int
     map_width: int
-    dialog_height: int
-    dialog_width: int
-    stats_height: int
-    stats_width: int
-    messages: List[str] = field(default_factory=list)
     won: Optional[bool] = None  # True if won, False if lost, None if in progress
 
 
@@ -106,43 +100,13 @@ def draw_endgame(game: Game):
 
 def draw_map(game: Game) -> None:
     game.draw_console.clear()
-    # Display messages in a bordered pane.
-    game.draw_console.draw_frame(
-        0,
-        game.map_height,
-        game.dialog_width,
-        game.dialog_height,
-        title='Messages'
-    )
-    for i, msg in enumerate(game.messages[-6:]):
-        game.draw_console.print(
-            2,
-            game.map_height + 2 + i,
-            msg
-        )
-    # Display stats in a bordered pane.
-    game.draw_console.draw_frame(
-        game.dialog_width,
-        game.map_height,
-        game.stats_width,
-        game.stats_height,
-        title='Stats'
-    )
-    game.draw_console.print(
-        game.dialog_width + 2,
-        game.map_height + 2,
-        f'Health: {game.player_hp}',
-        fg=tcod.red
-    )
-    # Draw visible (white) and previously visible (gray) walls and floors.
+    # Draw visible walls and floors.
     for y, row in enumerate(game.map_tiles):
         for x, tile in enumerate(row):
             if game.fov_map.fov[y][x]:
                 game.draw_console.draw_rect(x, y, 1, 1, ord(tile), fg=tcod.white)
-            elif game.memory[y][x]:
-                game.draw_console.draw_rect(x, y, 1, 1, ord(tile), fg=tcod.dark_gray)
-    # Draw the exit if it is visible or was previously visible.
-    if game.fov_map.fov[game.exit_y][game.exit_x] or game.memory[game.exit_y][game.exit_x]:
+    # Draw the exit if it is visible.
+    if game.fov_map.fov[game.exit_y][game.exit_x]:
         game.draw_console.draw_rect(
             game.exit_x,
             game.exit_y,
@@ -155,7 +119,7 @@ def draw_map(game: Game) -> None:
     for mob_x, mob_y in game.mobs.keys():
         if game.fov_map.fov[mob_y][mob_x]:
             game.draw_console.draw_rect(mob_x, mob_y, 1, 1, ord('O'), fg=tcod.red)
-    # Always draw the player.
+    # Draw the player.
     game.draw_console.draw_rect(
         game.player_x,
         game.player_y,
@@ -169,7 +133,6 @@ class MapStateHandler(StateHandler):
 
     def on_reenter_state(self):
         self.game.fov_map.compute_fov(self.game.player_x, self.game.player_y, 10)
-        self.game.memory |= self.game.fov_map.fov
         super().on_reenter_state()
 
     def draw(self):
@@ -200,13 +163,11 @@ class MapStateHandler(StateHandler):
         # We let the player strike first, then check if the mob is dead prior
         # to counterattack. This gives the player a slight advantage.
         mob.hp -= 1
-        self.game.messages.append('Your hit an orc.')
         if mob.hp <= 0:
             self.game.mobs.pop(coords)
             self.game.occupied_coords.remove(coords)
         else:
             self.game.player_hp -= 1
-            self.game.messages.append('An orc hits you.')
         # If the player's hit points reach zero, they lose of course!
         if self.game.player_hp <= 0:
             self.game.won = False
@@ -246,10 +207,7 @@ class MapStateHandler(StateHandler):
             allow_attack=True
         )
         if not action_type:
-            # This indicates that the action is blocked. We skip the entirely
-            # if the player tries to make a bogus move rather than penalize
-            # them by letting all the mobs move.
-            self.game.messages.append('Your path is blocked.')
+            # This indicates that the action is blocked. Skip the turn.
             return
         if action_type == 'attack':
             self.handle_attack(coords, action_target)
@@ -326,13 +284,16 @@ class EndgameStateHandler(StateHandler):
         self.next_state = None
 
     def ev_keydown(self, event):
+        print(event)
         if event.scancode == tcod.event.SCANCODE_F:
             fullscreen = not tcod.console_is_fullscreen()
             tcod.console_set_fullscreen(fullscreen)
         elif event.scancode == tcod.event.SCANCODE_Q:
-            self.next_state = None  # quit
+            # quit
+            self.next_state = None
         elif event.scancode == tcod.event.SCANCODE_R:
-            self.next_state = State.MAP  # restart
+            # restart
+            self.next_state = State.MAP
             self.game = build_game(self.game.root_console, self.game.draw_console)
 
 
@@ -379,7 +340,7 @@ def is_wall(
 ) -> bool:
     height = len(map_tiles)
     width = len(map_tiles[0])
-    # Is it even in the map?
+    # Coordinates outside the map are considered walls.
     if not 0 <= x < width:
         return True
     if not 0 <= y < height:
@@ -410,28 +371,22 @@ def build_game(
         root_console: tcod.console.Console,
         draw_console: tcod.console.Console
 ) -> Game:
-    stats_width = 20
-    stats_height = 10
-    dialog_width = CONSOLE_WIDTH - stats_width
-    dialog_height = stats_height
-    map_width = CONSOLE_WIDTH
-    map_height = CONSOLE_HEIGHT - dialog_height
-    map_tiles = build_map(map_width, map_height)
+    map_tiles = build_map(CONSOLE_WIDTH, CONSOLE_HEIGHT)
     occupied_coords = set()
+    mobs_coords = set()
     player_x, player_y = place_randomly(map_tiles, occupied_coords)
     exit_x, exit_y = place_randomly(map_tiles, occupied_coords)
     mobs = {}
     for i in range(25):
         mob_coords = place_randomly(map_tiles, occupied_coords)
         mobs[mob_coords] = Mob(5)
-    fov_map = tcod.map.Map(map_width, map_height)
+    fov_map = tcod.map.Map(CONSOLE_WIDTH, CONSOLE_HEIGHT)
     # Transparent tiles are everything except the walls.
     for y, row in enumerate(map_tiles):
         for x, tile in enumerate(row):
             if tile != '#':
                 fov_map.transparent[y][x] = True
     fov_map.compute_fov(player_x, player_y, 10)
-    memory = np.copy(fov_map.fov)
     return Game(
         root_console=root_console,
         draw_console=draw_console,
@@ -442,15 +397,10 @@ def build_game(
         occupied_coords=occupied_coords,
         mobs=mobs,
         fov_map=fov_map,
-        memory=memory,
         exit_x=exit_x,
         exit_y=exit_y,
-        map_width=map_width,
-        map_height=map_height,
-        dialog_width=dialog_width,
-        dialog_height=dialog_height,
-        stats_width=stats_width,
-        stats_height=stats_height
+        map_width=CONSOLE_WIDTH,
+        map_height=CONSOLE_HEIGHT
     )
 
 

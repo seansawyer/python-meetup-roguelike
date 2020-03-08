@@ -33,14 +33,9 @@ class Game:
     memory: np.ndarray
     exit_x: int
     exit_y: int
-    # meta state
+    # other state
     map_height: int
     map_width: int
-    dialog_height: int
-    dialog_width: int
-    stats_height: int
-    stats_width: int
-    messages: List[str] = field(default_factory=list)
     won: Optional[bool] = None  # True if won, False if lost, None if in progress
 
 
@@ -106,34 +101,6 @@ def draw_endgame(game: Game):
 
 def draw_map(game: Game) -> None:
     game.draw_console.clear()
-    # Display messages in a bordered pane.
-    game.draw_console.draw_frame(
-        0,
-        game.map_height,
-        game.dialog_width,
-        game.dialog_height,
-        title='Messages'
-    )
-    for i, msg in enumerate(game.messages[-6:]):
-        game.draw_console.print(
-            2,
-            game.map_height + 2 + i,
-            msg
-        )
-    # Display stats in a bordered pane.
-    game.draw_console.draw_frame(
-        game.dialog_width,
-        game.map_height,
-        game.stats_width,
-        game.stats_height,
-        title='Stats'
-    )
-    game.draw_console.print(
-        game.dialog_width + 2,
-        game.map_height + 2,
-        f'Health: {game.player_hp}',
-        fg=tcod.red
-    )
     # Draw visible (white) and previously visible (gray) walls and floors.
     for y, row in enumerate(game.map_tiles):
         for x, tile in enumerate(row):
@@ -183,9 +150,8 @@ class MapStateHandler(StateHandler):
             fullscreen = not tcod.console_is_fullscreen()
             tcod.console_set_fullscreen(fullscreen)
         elif event.scancode == tcod.event.SCANCODE_Q:
-            self.next_state = None  # quit
+            self.next_state = None
         elif event.scancode == tcod.event.SCANCODE_W:
-            self.game.won = True  # win
             self.next_state = State.ENDGAME
         elif event.scancode == tcod.event.SCANCODE_H:
             self.maybe_move(-1, 0)  # left
@@ -200,13 +166,11 @@ class MapStateHandler(StateHandler):
         # We let the player strike first, then check if the mob is dead prior
         # to counterattack. This gives the player a slight advantage.
         mob.hp -= 1
-        self.game.messages.append('Your hit an orc.')
         if mob.hp <= 0:
             self.game.mobs.pop(coords)
             self.game.occupied_coords.remove(coords)
         else:
             self.game.player_hp -= 1
-            self.game.messages.append('An orc hits you.')
         # If the player's hit points reach zero, they lose of course!
         if self.game.player_hp <= 0:
             self.game.won = False
@@ -242,14 +206,10 @@ class MapStateHandler(StateHandler):
             self.game.player_x,
             self.game.player_y,
             dx,
-            dy,
-            allow_attack=True
+            dy
         )
         if not action_type:
-            # This indicates that the action is blocked. We skip the entirely
-            # if the player tries to make a bogus move rather than penalize
-            # them by letting all the mobs move.
-            self.game.messages.append('Your path is blocked.')
+            # This indicates that the action is blocked. Skip the turn.
             return
         if action_type == 'attack':
             self.handle_attack(coords, action_target)
@@ -330,9 +290,11 @@ class EndgameStateHandler(StateHandler):
             fullscreen = not tcod.console_is_fullscreen()
             tcod.console_set_fullscreen(fullscreen)
         elif event.scancode == tcod.event.SCANCODE_Q:
-            self.next_state = None  # quit
+            # quit
+            self.next_state = None
         elif event.scancode == tcod.event.SCANCODE_R:
-            self.next_state = State.MAP  # restart
+            # restart
+            self.next_state = State.MAP
             self.game = build_game(self.game.root_console, self.game.draw_console)
 
 
@@ -410,21 +372,16 @@ def build_game(
         root_console: tcod.console.Console,
         draw_console: tcod.console.Console
 ) -> Game:
-    stats_width = 20
-    stats_height = 10
-    dialog_width = CONSOLE_WIDTH - stats_width
-    dialog_height = stats_height
-    map_width = CONSOLE_WIDTH
-    map_height = CONSOLE_HEIGHT - dialog_height
-    map_tiles = build_map(map_width, map_height)
+    map_tiles = build_map(CONSOLE_WIDTH, CONSOLE_HEIGHT)
     occupied_coords = set()
+    mobs_coords = set()
     player_x, player_y = place_randomly(map_tiles, occupied_coords)
     exit_x, exit_y = place_randomly(map_tiles, occupied_coords)
     mobs = {}
     for i in range(25):
         mob_coords = place_randomly(map_tiles, occupied_coords)
         mobs[mob_coords] = Mob(5)
-    fov_map = tcod.map.Map(map_width, map_height)
+    fov_map = tcod.map.Map(CONSOLE_WIDTH, CONSOLE_HEIGHT)
     # Transparent tiles are everything except the walls.
     for y, row in enumerate(map_tiles):
         for x, tile in enumerate(row):
@@ -445,12 +402,8 @@ def build_game(
         memory=memory,
         exit_x=exit_x,
         exit_y=exit_y,
-        map_width=map_width,
-        map_height=map_height,
-        dialog_width=dialog_width,
-        dialog_height=dialog_height,
-        stats_width=stats_width,
-        stats_height=stats_height
+        map_width=CONSOLE_WIDTH,
+        map_height=CONSOLE_HEIGHT,
     )
 
 
