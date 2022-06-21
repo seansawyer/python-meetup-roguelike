@@ -1,7 +1,7 @@
 altgraph==0.16.1
 cffi==1.12.3
 macholib==1.14
-numpy==1.17.2
+numpy==1.22.0
 pycparser==2.19
 PyInstaller==3.6
 tcod==11.9.1
